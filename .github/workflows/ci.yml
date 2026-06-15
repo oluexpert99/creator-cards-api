@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # package-lock.json is gitignored by the template, so use `npm install` (not `npm ci`).
+      - name: Install dependencies
+        run: npm install
+
+      - name: Lint
+        run: npx eslint endpoints/creator-cards services/creator-cards models/creator-card.js messages/creator-cards.js
+
+      - name: Test (unit + integration on in-memory MongoDB)
+        run: npm test

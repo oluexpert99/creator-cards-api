@@ -1,0 +1,214 @@
+openapi: 3.0.3
+info:
+  title: Creator Cards API
+  version: 1.0.0
+  description: >
+    Shareable "link-in-bio" creator profile cards with attached service rate cards.
+    No authentication. Endpoints live at the root of the base URL (no versioning).
+servers:
+  - url: https://your-deployment.example.com
+    description: Replace with your deployed base URL
+
+paths:
+  /creator-cards:
+    post:
+      summary: Create a creator card
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: false
+          schema: { type: string }
+          description: Replaying the same key returns the original card (no duplicate).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateCardRequest' }
+      responses:
+        '200':
+          description: Card created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CardEnvelope' }
+        '400':
+          description: Validation failure or business-rule error (SL02 / AC01 / AC05)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '409':
+          description: Idempotency-Key reused with a different payload (ID01)
+    get:
+      summary: List a creator's cards (extra feature)
+      parameters:
+        - { in: query, name: creator_reference, required: true, schema: { type: string } }
+        - { in: query, name: status, required: false, schema: { type: string, enum: [draft, published] } }
+        - { in: query, name: page, required: false, schema: { type: integer, minimum: 1 } }
+        - { in: query, name: limit, required: false, schema: { type: integer, minimum: 1, maximum: 100 } }
+      responses:
+        '200': { description: Paginated list of the creator's cards }
+        '400': { description: creator_reference missing or invalid status }
+
+  /creator-cards/{slug}:
+    get:
+      summary: Retrieve a card by slug (public)
+      parameters:
+        - { in: path, name: slug, required: true, schema: { type: string } }
+        - { in: query, name: access_code, required: false, schema: { type: string } }
+      responses:
+        '200':
+          description: Card retrieved (access_code field is omitted)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CardEnvelope' }
+        '403':
+          description: Private card without (AC03) or with wrong (AC04) access_code
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '404':
+          description: Not found (NF01) or draft (NF02)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+    patch:
+      summary: Update a card (extra feature)
+      parameters:
+        - { in: path, name: slug, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - type: object
+                  required: [creator_reference]
+                  properties:
+                    creator_reference: { type: string, minLength: 20, maxLength: 20 }
+                - $ref: '#/components/schemas/CreateCardRequest'
+      responses:
+        '200': { description: Card updated }
+        '403': { description: Not the card owner (OW01) }
+        '404': { description: Not found (NF01) }
+    delete:
+      summary: Delete a card by slug
+      parameters:
+        - { in: path, name: slug, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [creator_reference]
+              properties:
+                creator_reference: { type: string, minLength: 20, maxLength: 20 }
+      responses:
+        '200':
+          description: Deleted card returned in creation format (with `deleted` set)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CardEnvelope' }
+        '404':
+          description: Not found (NF01)
+
+  /creator-cards/{slug}/stats:
+    get:
+      summary: View analytics for a card (extra feature)
+      parameters:
+        - { in: path, name: slug, required: true, schema: { type: string } }
+        - { in: query, name: access_code, required: false, schema: { type: string } }
+      responses:
+        '200': { description: '{ slug, view_count, created, updated }' }
+        '403': { description: Private card access failure (AC03 / AC04) }
+        '404': { description: Not found (NF01) or draft (NF02) }
+
+  /health:
+    get:
+      summary: Readiness probe
+      responses:
+        '200': { description: Service healthy }
+
+components:
+  schemas:
+    Link:
+      type: object
+      required: [title, url]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 100 }
+        url: { type: string, maxLength: 200, description: must start with http:// or https:// }
+    ServiceRate:
+      type: object
+      required: [name, amount]
+      properties:
+        name: { type: string, minLength: 3, maxLength: 100 }
+        description: { type: string, maxLength: 250 }
+        amount: { type: integer, minimum: 1, description: minor units (kobo/cents/pence/pesewas) }
+    ServiceRates:
+      type: object
+      required: [currency, rates]
+      properties:
+        currency: { type: string, enum: [NGN, USD, GBP, GHS] }
+        rates:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/ServiceRate' }
+    CreateCardRequest:
+      type: object
+      required: [title, creator_reference, status]
+      properties:
+        title: { type: string, minLength: 3, maxLength: 100 }
+        description: { type: string, maxLength: 500 }
+        slug:
+          type: string
+          minLength: 5
+          maxLength: 50
+          description: letters, numbers, hyphens, underscores; auto-generated if omitted
+        creator_reference: { type: string, minLength: 20, maxLength: 20 }
+        links:
+          type: array
+          items: { $ref: '#/components/schemas/Link' }
+        service_rates: { $ref: '#/components/schemas/ServiceRates' }
+        status: { type: string, enum: [draft, published] }
+        access_type: { type: string, enum: [public, private], default: public }
+        access_code:
+          type: string
+          minLength: 6
+          maxLength: 6
+          description: exactly 6 alphanumeric chars; required iff access_type is private
+    Card:
+      type: object
+      properties:
+        id: { type: string, description: ULID (never exposed as _id) }
+        title: { type: string }
+        description: { type: string, nullable: true }
+        slug: { type: string }
+        creator_reference: { type: string }
+        links:
+          type: array
+          items: { $ref: '#/components/schemas/Link' }
+        service_rates:
+          nullable: true
+          allOf: [{ $ref: '#/components/schemas/ServiceRates' }]
+        status: { type: string, enum: [draft, published] }
+        access_type: { type: string, enum: [public, private] }
+        access_code:
+          type: string
+          nullable: true
+          description: present on create/delete responses only, never on retrieval
+        created: { type: integer, description: unix epoch ms }
+        updated: { type: integer, description: unix epoch ms }
+        deleted: { type: integer, nullable: true, description: ms epoch once deleted, else null }
+    CardEnvelope:
+      type: object
+      properties:
+        status: { type: string, example: success }
+        message: { type: string }
+        data: { $ref: '#/components/schemas/Card' }
+    ErrorResponse:
+      type: object
+      properties:
+        status: { type: string, example: error }
+        message: { type: string }
+        code:
+          type: string
+          enum: [SL02, AC01, AC05, NF01, NF02, AC03, AC04, OW01, ID01]
