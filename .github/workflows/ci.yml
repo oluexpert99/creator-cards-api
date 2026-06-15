@@ -32,7 +32,53 @@ jobs:
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger Render deploy
-        run: curl -fsSL -X POST "$RENDER_DEPLOY_HOOK_URL"
+      - name: Trigger Render deploy (if hook configured)
         env:
           RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$RENDER_DEPLOY_HOOK_URL" ]; then
+            echo "RENDER_DEPLOY_HOOK_URL secret not set — skipping deploy."
+            exit 0
+          fi
+          curl -fsSL -X POST "$RENDER_DEPLOY_HOOK_URL"
+          echo "Render deploy triggered."
+
+  smoke:
+    # After a deploy is triggered, verify the live service is healthy and the contract holds.
+    # Read-only checks only (no writes), so production data is never polluted.
+    needs: deploy
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    runs-on: ubuntu-latest
+    env:
+      BASE: ${{ vars.LIVE_BASE_URL || 'https://creator-cards-api.onrender.com' }}
+    steps:
+      - name: Wait for the new version to come up
+        # The deploy hook is async (Render builds for ~1-3 min). Give it a head start, then poll
+        # /health until the service responds. Note: hook-based deploys can't prove *which* commit
+        # is live without the Render API — this verifies the live service is healthy post-pipeline.
+        run: sleep 60
+
+      - name: Poll /health until ready
+        run: |
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 25 "$BASE/health" || true)
+            if [ "$code" = "200" ]; then echo "health 200 after $i attempt(s)"; exit 0; fi
+            echo "attempt $i: health=$code; retrying in 10s..."
+            sleep 10
+          done
+          echo "::error::service did not return health 200 in time"
+          exit 1
+
+      - name: Assert health + DB connectivity
+        run: |
+          health=$(curl -s --max-time 25 "$BASE/health")
+          echo "$health"
+          echo "$health" | grep -q '"db":"connected"' || { echo "::error::DB not connected"; exit 1; }
+
+      - name: Assert error contract (GET missing slug → 404 NF01)
+        run: |
+          resp=$(curl -s --max-time 25 -w "\n%{http_code}" "$BASE/creator-cards/__ci_smoke_does_not_exist__")
+          echo "$resp"
+          echo "$resp" | grep -q '"code":"NF01"' || { echo "::error::expected code NF01"; exit 1; }
+          echo "$resp" | tail -n1 | grep -q '^404$' || { echo "::error::expected HTTP 404"; exit 1; }
+          echo "Live smoke test passed ✅"
