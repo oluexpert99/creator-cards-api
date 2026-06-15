@@ -4,9 +4,11 @@ A small **Creator Card** microservice — shareable "link-in-bio" profile cards 
 service rate cards. Built on the Resilience 17 Node.js backend template (Express + MongoDB,
 the template's VSL validator, repository factory, ULID ids and `throwAppError` utilities).
 
-[![CI](https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/REPO/actions/workflows/ci.yml)
+[![CI](https://github.com/oluexpert99/creator-cards-api/actions/workflows/ci.yml/badge.svg)](https://github.com/oluexpert99/creator-cards-api/actions/workflows/ci.yml)
 
-> Replace `OWNER/REPO` in the badge URL with your GitHub path once pushed.
+**Live base URL:** <https://creator-cards-api.onrender.com> · Swagger UI at
+[`/docs`](https://creator-cards-api.onrender.com/docs)
+
 > The template's own reference docs remain in `documentation.md`.
 
 ## Endpoints
@@ -38,7 +40,7 @@ The spec source is [`openapi.yaml`](./openapi.yaml).
 ### Quick start with curl
 
 ```bash
-BASE=http://localhost:3000
+BASE=https://creator-cards-api.onrender.com   # or http://localhost:3000 for local
 
 # Create
 curl -s -X POST "$BASE/creator-cards" -H 'Content-Type: application/json' -d '{

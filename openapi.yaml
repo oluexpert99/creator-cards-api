@@ -6,8 +6,10 @@ info:
     Shareable "link-in-bio" creator profile cards with attached service rate cards.
     No authentication. Endpoints live at the root of the base URL (no versioning).
 servers:
-  - url: https://your-deployment.example.com
-    description: Replace with your deployed base URL
+  - url: https://creator-cards-api.onrender.com
+    description: Live deployment (Render)
+  - url: http://localhost:3000
+    description: Local development
 
 paths:
   /creator-cards:
